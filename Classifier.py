@@ -16,7 +16,6 @@ import torchvision
 from torch.utils.data import Dataset, DataLoader             # Classes
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.tensorboard import SummaryWriter
 
 import matplotlib.pyplot as plt
 
@@ -106,8 +105,8 @@ class CONVNeuralNet(nn.Module):
         
         self.conv1 = nn.Conv1d(1, 1, 20)
         self.conv2 = nn.Conv1d(1, 1, 5)
-        self.conv3 = nn.Conv1d(1, 1, 4)
-        self.conv4 = nn.Conv1d(1, 1, 3)
+        # self.conv3 = nn.Conv1d(1, 1, 4)
+        # self.conv4 = nn.Conv1d(1, 1, 3)
         
         self.pool = nn.MaxPool1d(3, stride=stride)           # kernel size, stride (=shift to the right)
         
@@ -147,9 +146,9 @@ class FCNeuralNet(nn.Module):
     def __init__(self, input_size, hidden_size, num_classes):
         super(FCNeuralNet, self).__init__()
         self.l1 = nn.Linear(input_size, hidden_size)
-        self.l2 = nn.Linear(hidden_size, 30)
+        self.l2 = nn.Linear(hidden_size, num_classes)
         # self.l3 = nn.Linear(40, 20)
-        self.l4 = nn.Linear(30, num_classes)
+        # self.l4 = nn.Linear(30, num_classes)
         # self.l5 = nn.Linear(20, num_classes)
         
         self.relu = nn.LeakyReLU()
@@ -162,13 +161,13 @@ class FCNeuralNet(nn.Module):
         # print(out.shape)
         out = self.l2(out)
         # print(out.shape)
-        out = self.relu(out)
+        # out = self.relu(out)
         # print(out.shape)
         # out = self.l3(out)
         # print(out.shape)
         # out = self.relu(out)
         # print(out.shape)
-        out = self.l4(out)
+        # out = self.l4(out)
         # no softmax because in cross entropy function
         return out
 
@@ -190,7 +189,7 @@ def getData(batch_size):
 # In[7]:
 
 
-def trainModel(num_epochs, dataloader_train, dataloader_val, model, criterion, optimizer, writer, final=0):
+def trainModel(num_epochs, dataloader_train, dataloader_val, model, criterion, optimizer, final=0):
     for epoch in range(num_epochs):
         # if (epoch+1) % 20 == 0:
         #        print(f"---- epoch = {epoch+1}/{num_epochs} ----")
@@ -208,17 +207,17 @@ def trainModel(num_epochs, dataloader_train, dataloader_val, model, criterion, o
                 # print(f"epoch {epoch+1}/{num_epochs}, loss = {loss.item():.4f}")
             
         if final:
-            evaluateModel(dataloader_val, model, writer, final)
+            evaluateModel(dataloader_val, model, final)
     
     print(f"Final loss = {round(loss.item(), 6)}\n")
-    return evaluateModel(dataloader_val, model, writer, 1)
+    return evaluateModel(dataloader_val, model, 1)
     # print("----------------- trainModel success -----------------")
 
 
 # In[8]:
 
 
-def evaluateModel(dataloader, model, writer, final=0):
+def evaluateModel(dataloader, model, final=0):
     with torch.no_grad():
         predictions = []
         labels = []
@@ -272,31 +271,26 @@ def runner(good_models, batch_size, learning_rate, hidden_size, input_size, num_
         hidden_size = 0
         dataloader_train, dataloader_val, dataloader_test = getData(batch_size)
 
-        writer = SummaryWriter("runs/FC_class/bs" + str(batch_size) + "_hs" + str(hidden_size) + "_lr" + str(learning_rate))
         torch.manual_seed(0)
         model = CONVNeuralNet(input_size, hidden_size, num_classes).to(device)
         criterion = nn.CrossEntropyLoss()
         optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
-
-        good_model = trainModel(num_epochs, dataloader_train, dataloader_val, model, criterion, optimizer, writer)
-        if good_model == 1.0:
-            good_models += 1
-
-            saveM(model, batch_size, hidden_size, learning_rate, good_models)
+        
     else:
         dataloader_train, dataloader_val, dataloader_test = getData(batch_size)
 
-        writer = SummaryWriter("runs/FC_class/bs" + str(batch_size) + "_hs" + str(hidden_size) + "_lr" + str(learning_rate))
         torch.manual_seed(0)
         model = FCNeuralNet(input_size, hidden_size, num_classes).to(device)
         criterion = nn.CrossEntropyLoss()
         optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 
-        good_model = trainModel(num_epochs, dataloader_train, dataloader_val, model, criterion, optimizer, writer)
-        if good_model == 1.0:
-            good_models += 1
+    # If a model has accuracy of 1 it is saved and returned
+    good_model = trainModel(num_epochs, dataloader_train, dataloader_val, model, criterion, optimizer)
+    if good_model == 1.0:
+        good_models += 1
 
-            saveM(model, batch_size, hidden_size, learning_rate, good_models)
+        # The good model is saved so it can be called upon later
+        saveM(model, batch_size, hidden_size, learning_rate, good_models)
     
     return good_models
 
@@ -311,26 +305,31 @@ def main():
     
     good_models = 0
     
+    # hyperparameters
     batch_sizes = [50, 100, 200]
     learning_rates = [0.5, 0.3, 0.1, 0.01, 0.001] 
     hidden_sizes = [50, 200, 400, 600, 800]
     
     num_training_samples = len(bd_train)
     num_classes = 4
-    num_epochs = 10
+    num_epochs = 20
     input_size = 1020
     
     run = 0
     
+    # loop over all hyperparameters
     for batch_size in batch_sizes:        
         for learning_rate in learning_rates:
             if inp == "CNN":
+                # CNN network does not consider hidden size
                 hidden_size = 0
                 
+                # To keep track of model used (hyperparameters) and progress
                 run += 1
                 print(f"------------------------------- run {run} -------------------------------")
                 print(f"Batch size = {batch_size}, learning_rate = {learning_rate}, hidden_size = {hidden_size}")
 
+                # The number of good models (accuracy of 1) are counted 
                 good_models = runner(good_models, batch_size, learning_rate, hidden_size, input_size, num_classes, num_epochs)
             else:
                 for hidden_size in hidden_sizes:
@@ -338,7 +337,8 @@ def main():
                     run += 1
                     print(f"------------------------------- run {run} -------------------------------")
                     print(f"Batch size = {batch_size}, learning_rate = {learning_rate}, hidden_size = {hidden_size}")
-
+                    
+                    # The number of good models (accuracy of 1) are counted 
                     good_models = runner(good_models, batch_size, learning_rate, hidden_size, input_size, num_classes, num_epochs)
         
     return good_models
@@ -349,12 +349,13 @@ def main():
 
 def test(good_models):
 # Test best hyperparameters
-    print("\n"*3 + "-"*60 +  " TEST " + "-"*60 + "\n"*3)
+    print("\n"*1 + "-"*40 +  " TEST " + "-"*40 + "\n"*2)
     test_run = 0
     
     input_size = 1020
     num_classes = 4
     
+    # The good models are looped over and tested
     for index in range(good_models):
         test_run += 1
         loaded_dict = loadM(test_run)
@@ -374,17 +375,16 @@ def test(good_models):
         
         dataloader_train, dataloader_val, dataloader_test = getData(batch_size)
 
-        writer = SummaryWriter("runs/FC_class/testrun")        
-        evaluateModel(dataloader_test, model, writer, 1)
+        evaluateModel(dataloader_test, model, 1)
 
 
-# In[13]:
+# In[ ]:
 
 
 good_models = main()
 
 
-# In[14]:
+# In[ ]:
 
 
 test(good_models)
